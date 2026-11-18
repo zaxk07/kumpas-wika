@@ -9,6 +9,8 @@ export interface GlossEntry {
   key: number
   id: SignId
   at: number // epoch ms
+  /** Playback position (s) in an uploaded video when the sign locked; drives .srt timing. */
+  media?: number
   confidence: number
 }
 
@@ -103,13 +105,13 @@ export function useSubtitles(mode: SubtitleMode, autoSpeak: boolean) {
   }, [finalizeOpen])
 
   const push = useCallback(
-    (d: Detection, t: number) => {
+    (d: Detection, t: number, mediaAt?: number) => {
       const now = Date.now()
       const prevT = srcLast.current
       if (prevT != null && (t - prevT >= FINALIZE_MS || t < prevT)) finalizeOpen()
       srcLast.current = t
       srcNow.current = t
-      const entry: GlossEntry = { key: keySeq++, id: d.id, at: now, confidence: d.confidence }
+      const entry: GlossEntry = { key: keySeq++, id: d.id, at: now, media: mediaAt, confidence: d.confidence }
       const cur = ref.current
       const last = cur[cur.length - 1]
       if (!last || last.closed) commit([...cur, { key: keySeq++, entries: [entry], closed: false }])

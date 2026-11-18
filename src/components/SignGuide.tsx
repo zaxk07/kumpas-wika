@@ -1,4 +1,4 @@
-import { Search } from 'lucide-react'
+import { GraduationCap, Search } from 'lucide-react'
 import { memo, useState } from 'react'
 import { activeIn, LETTERS, SIGNS, WORD_ORDER, type SignInfo } from '../lib/signs'
 import type { SignId, Standard } from '../lib/types'
@@ -18,9 +18,10 @@ interface Props {
   highlight?: SignId | null
   standard: Standard
   onStandardChange: (s: Standard) => void
+  onPractice: (id: SignId) => void
 }
 
-function Card({ s, standard, active }: { s: SignInfo; standard: Standard; active: boolean }) {
+function Card({ s, standard, active, onPractice }: { s: SignInfo; standard: Standard; active: boolean; onPractice: (id: SignId) => void }) {
   const gloss = standard === 'ASL' ? s.glossASL : s.glossFSL
   return (
     <li
@@ -45,6 +46,14 @@ function Card({ s, standard, active }: { s: SignInfo; standard: Standard; active
             {s.variant && <span className="font-normal text-zinc-400"> ({s.variant})</span>}
           </span>
           {s.kind !== 'letter' && <span className="text-xs text-zinc-400">{s.en}</span>}
+          <button
+            type="button"
+            onClick={() => onPractice(s.id)}
+            aria-label={`Practice ${s.kind === 'letter' ? `the letter ${s.fil}` : s.fil}`}
+            className="ml-auto inline-flex items-center gap-1 rounded-md border border-white/[0.08] px-1.5 py-0.5 text-[11px] font-medium text-zinc-400 transition hover:border-emerald-500/40 hover:text-emerald-300 active:scale-[0.97]"
+          >
+            <GraduationCap size={12} /> Practice
+          </button>
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-zinc-500">
           <span>{kindLabel(s)}</span>
@@ -75,7 +84,7 @@ function Card({ s, standard, active }: { s: SignInfo; standard: Standard; active
   )
 }
 
-export const SignGuide = memo(function SignGuide({ highlight, standard, onStandardChange }: Props) {
+export const SignGuide = memo(function SignGuide({ highlight, standard, onStandardChange, onPractice }: Props) {
   const [filter, setFilter] = useState<Filter>('words')
   const [query, setQuery] = useState('')
   const q = query.trim().toLowerCase()
@@ -91,7 +100,7 @@ export const SignGuide = memo(function SignGuide({ highlight, standard, onStanda
   return (
     <section id="dictionary" className="mx-auto max-w-[1400px] px-4 pt-24 pb-24 sm:px-6 sm:pt-32">
       <SectionHeader
-        index="04"
+        index="05"
         kicker="Dictionary"
         title="Sign guide"
         lede={`${wordCount} words and the full alphabet, each with a hand diagram drawn from the recognizer's own hand model. The sign being read right now lights up.`}
@@ -140,7 +149,7 @@ export const SignGuide = memo(function SignGuide({ highlight, standard, onStanda
         {ids.length ? (
           <ul className="grid gap-2 p-3 sm:grid-cols-2 sm:p-4 lg:grid-cols-3 xl:grid-cols-4">
             {ids.map((id) => (
-              <Card key={id} s={SIGNS[id]} standard={standard} active={highlight === id} />
+              <Card key={id} s={SIGNS[id]} standard={standard} active={highlight === id} onPractice={onPractice} />
             ))}
           </ul>
         ) : (

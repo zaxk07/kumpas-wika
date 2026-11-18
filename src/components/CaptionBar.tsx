@@ -14,9 +14,11 @@ interface Props {
   mode: SubtitleMode
   standard: Standard
   active: boolean
+  /** Shown while the input is running but no hand is visible. */
+  waitingText?: string
 }
 
-export function CaptionBar({ output, phrase, mode, standard, active }: Props) {
+export function CaptionBar({ output, phrase, mode, standard, active, waitingText = 'Raise your hand into the frame to start signing.' }: Props) {
   const cand = output?.candidate
   const tokens = phrase ? groupGlosses(phrase.entries) : []
   const sentence = phrase ? (phrase.closed ? phraseSentence(phrase) : previewSentence(tokens)) : null
@@ -33,7 +35,7 @@ export function CaptionBar({ output, phrase, mode, standard, active }: Props) {
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 p-2 sm:p-4">
-      <div className="mx-auto max-w-4xl rounded-xl border border-white/[0.08] bg-obsidian/80 px-3 py-2 shadow-2xl backdrop-blur-md sm:px-4 sm:py-3">
+      <div data-tour="lock" className="mx-auto max-w-4xl rounded-xl border border-white/[0.08] bg-obsidian/80 px-3 py-2 shadow-2xl backdrop-blur-md sm:px-4 sm:py-3">
         {/* Line 1: live partial detection */}
         <div className="flex min-h-9 items-center gap-3" data-testid="caption-partial">
           {cand ? (
@@ -62,10 +64,10 @@ export function CaptionBar({ output, phrase, mode, standard, active }: Props) {
           ) : (
             <span className="text-sm text-zinc-400">
               {!active
-                ? 'Captions will show up here once the camera or the demo is on.'
+                ? 'Captions show up here once an input or the demo is running.'
                 : output?.hasHand
                   ? 'I can see your hand. Go ahead and sign…'
-                  : 'Raise your hand into the frame to start signing.'}
+                  : waitingText}
             </span>
           )}
         </div>

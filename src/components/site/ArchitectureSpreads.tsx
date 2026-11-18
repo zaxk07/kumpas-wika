@@ -272,7 +272,7 @@ export function ArchitectureSpreads() {
   return (
     <section id="architecture" className="mx-auto max-w-[1400px] px-4 pt-24 sm:px-6 sm:pt-32">
       <SectionHeader
-        index="02"
+        index="03"
         kicker="Architecture"
         title="How a gesture becomes a sentence"
         lede="Three stages, all running locally. Drag, flick, or use the arrow keys to turn the page."

@@ -1,8 +1,9 @@
-import { Check, Copy, Delete, Trash2, Volume2, VolumeX } from 'lucide-react'
+import { Check, Copy, Delete, FileDown, Trash2, Volume2, VolumeX } from 'lucide-react'
 import { memo, useState } from 'react'
 import { groupGlosses, previewSentence } from '../lib/grammar'
 import type { Standard, SubtitleMode } from '../lib/types'
 import { phraseSentence, speakSentence, type Phrase } from '../hooks/useSubtitles'
+import { buildSrt, downloadText, srtFilename } from '../lib/srt'
 import { GlossPills } from './GlossPills'
 
 interface Props {
@@ -13,6 +14,8 @@ interface Props {
   onToggleSpeak: () => void
   onBackspace: () => void
   onClear: () => void
+  /** Name of the uploaded video, used for the .srt filename. */
+  videoName?: string | null
 }
 
 const fmt = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -20,7 +23,7 @@ const fmt = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit
 const btn =
   'inline-flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-surface-2 px-2.5 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-zinc-800 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40'
 
-export const TranscriptPanel = memo(function TranscriptPanel({ phrases, mode, standard, autoSpeak, onToggleSpeak, onBackspace, onClear }: Props) {
+export const TranscriptPanel = memo(function TranscriptPanel({ phrases, mode, standard, autoSpeak, onToggleSpeak, onBackspace, onClear, videoName = null }: Props) {
   const [copied, setCopied] = useState(false)
   const filled = phrases.filter((p) => p.entries.length)
   const signCount = filled.reduce((a, p) => a + p.entries.length, 0)
@@ -40,8 +43,16 @@ export const TranscriptPanel = memo(function TranscriptPanel({ phrases, mode, st
     }
   }
 
+  const downloadSrt = () => {
+    const srt = buildSrt(
+      filled.map((p) => ({ entries: p.entries, sentence: p.closed ? phraseSentence(p) : previewSentence(groupGlosses(p.entries)) })),
+      mode,
+    )
+    if (srt) downloadText(srtFilename(videoName), srt)
+  }
+
   return (
-    <aside className="flex h-full min-h-0 flex-col rounded-2xl border border-white/[0.08] bg-surface">
+    <aside data-tour="transcript" className="flex min-h-0 flex-1 flex-col rounded-2xl border border-white/[0.08] bg-surface">
       <div className="flex items-center justify-between gap-2 border-b border-white/[0.08] px-4 py-3">
         <div>
           <h2 className="text-sm font-semibold tracking-tight text-fg">Transcript</h2>
@@ -105,6 +116,10 @@ export const TranscriptPanel = memo(function TranscriptPanel({ phrases, mode, st
         <button type="button" className={btn} onClick={copy} disabled={!filled.length}>
           {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
           {copied ? 'Copied' : 'Copy subtitles'}
+        </button>
+        <button type="button" className={btn} onClick={downloadSrt} disabled={!filled.length} data-testid="download-srt">
+          <FileDown size={14} />
+          Download .SRT
         </button>
         <button type="button" className={btn} onClick={onBackspace} disabled={!filled.length}>
           <Delete size={14} />

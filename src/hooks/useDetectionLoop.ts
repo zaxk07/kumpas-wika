@@ -1,12 +1,27 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { demoFrame } from '../lib/demo'
-import { coverMapper, drawBody, drawDemoBackdrop, drawHands, type Trails } from '../lib/draw'
+import { drawBody, drawDemoBackdrop, drawHands, videoMapper, type MapOptions, type Trails } from '../lib/draw'
 import { SignEngine, type EngineOutput } from '../lib/engine'
 import type { InferenceClient } from '../lib/inference'
 import { INFER_WIDTH } from '../lib/mediapipe'
 import type { Detection, HandLandmarks, InputFrame, SignId, Standard, UpperBody } from '../lib/types'
 
-export type Source = 'camera' | 'demo' | 'off'
+/** camera = webcam, video = uploaded file, screen = captured tab or window. */
+export type Source = 'camera' | 'video' | 'screen' | 'demo' | 'off'
+
+/**
+ * How a source is displayed. The webcam (and the demo signer) is mirrored like a selfie;
+ * uploaded and captured video is shown as-is and letterboxed, so the overlay lines up
+ * pixel-for-pixel with the person on screen. Landmarks themselves are always un-mirrored
+ * image coordinates, so the recognizer sees the same geometry either way.
+ */
+export function displayFor(source: Source): MapOptions {
+  return source === 'video' || source === 'screen' ? { mirror: false, fit: 'contain' } : { mirror: true, fit: 'cover' }
+}
+
+/** Gap inserted into the source clock when an uploaded video seeks or loops: clears the motion window
+ * and lets the open phrase finalize instead of splicing two unrelated moments together. */
+const SEEK_GAP_MS = 2500
 
 export interface Hint {
   level: 'good' | 'warn' | 'info'
@@ -44,8 +59,9 @@ interface Options {
   videoRef: RefObject<HTMLVideoElement | null>
   canvasRef: RefObject<HTMLCanvasElement | null>
   inference: InferenceClient | null
-  /** A sign locked. `t` is the source clock (camera performance.now() or simulated demo time). */
-  onCommit: (d: Detection, t: number) => void
+  /** A sign locked. `t` is the source clock (camera performance.now(), media time for uploaded video, or
+   * simulated demo time). `mediaAt` is the uploaded video's playback position in seconds, when there is one. */
+  onCommit: (d: Detection, t: number, mediaAt?: number) => void
   /** Called for every processed frame with the source clock (drives phrase finalization). */
   onTick: (t: number) => void
   threshold: number
@@ -60,8 +76,18 @@ function bodyFromPose(lms: { x: number; y: number; z: number; visibility?: numbe
 
 function computeHint(source: Source, out: EngineOutput | null, lum: number | null, latency: number, modelsReady: boolean): Hint {
   if (source === 'demo') return { level: 'info', text: 'The demo signer is running, so no camera is needed' }
-  if (source === 'off') return { level: 'info', text: 'Turn on your camera or try the demo to begin' }
+  if (source === 'off') return { level: 'info', text: 'Pick an input: camera, a video file, or a captured tab' }
   if (!modelsReady) return { level: 'info', text: 'Getting hand tracking ready…' }
+  if (source === 'video' || source === 'screen') {
+    if (!out?.hasHand) return { level: 'info', text: 'No hands in view yet. Signs are read as soon as a hand appears' }
+    if (out.palmHeight < 0.05)
+      return {
+        level: 'warn',
+        text: source === 'screen' ? 'The signer is small. Make the video bigger in the other tab' : 'The signer is small in frame, so some signs may be missed',
+      }
+    if (latency > 45) return { level: 'warn', text: `This device is running a bit slow (${latency.toFixed(0)} ms a frame)` }
+    return { level: 'good', text: source === 'screen' ? 'Reading signs from the captured tab' : 'Reading signs from the video' }
+  }
   if (lum != null && lum < 55) return { level: 'warn', text: 'It’s a little dark. Try facing a window or a lamp' }
   if (lum != null && lum > 215) return { level: 'warn', text: 'Too much light behind you. Try turning away from the window' }
   if (!out?.hasHand) return { level: 'info', text: 'Raise your hand to about chest height' }
@@ -113,6 +139,9 @@ export function useDetectionLoop({ source, videoRef, canvasRef, inference, onCom
     let cancelled = false
     let inFlight = false
     let lastVideoTime = -1
+    let lastMedia = -1
+    let mediaClock = 0
+    const display = displayFor(source)
     let lastStep = 0
     let demoClock = 0
     let inferCount = 0
@@ -137,9 +166,9 @@ export function useDetectionLoop({ source, videoRef, canvasRef, inference, onCom
     let lastRender = performance.now()
 
     /** Feed one frame (demo or camera result) through the recognizer. */
-    const processFrame = (frame: InputFrame) => {
+    const processFrame = (frame: InputFrame, mediaAt?: number) => {
       out = engine.process(frame)
-      if (out.committed) onCommitRef.current(out.committed, frame.t)
+      if (out.committed) onCommitRef.current(out.committed, frame.t, mediaAt)
       onTickRef.current(frame.t)
       latestHands = frame.hands
       latestBody = frame.body
@@ -165,6 +194,26 @@ export function useDetectionLoop({ source, videoRef, canvasRef, inference, onCom
       if (video.currentTime === lastVideoTime || now - lastStep < INFER_INTERVAL_MS) return
       lastVideoTime = video.currentTime
       lastStep = now
+
+      // Source clock. Live inputs use wall time. An uploaded file uses its media time, so the motion
+      // analysis sees real signing speed at 0.5x / 0.75x playback, and a seek or loop (time going
+      // backwards or jumping ahead) becomes a clean gap instead of a fake, impossibly fast movement.
+      let t = now
+      let mediaAt: number | undefined
+      if (source === 'video') {
+        mediaAt = video.currentTime
+        const step = (mediaAt - lastMedia) * 1000
+        if (lastMedia < 0) mediaClock = 0
+        else if (step > 0 && step <= 1000) mediaClock += step
+        else {
+          engine.reset()
+          trails.clear()
+          mediaClock += SEEK_GAP_MS
+        }
+        lastMedia = mediaAt
+        t = mediaClock
+      }
+
       inFlight = true
       const vw = video.videoWidth
       const vh = video.videoHeight
@@ -186,7 +235,7 @@ export function useDetectionLoop({ source, videoRef, canvasRef, inference, onCom
           if (latencies.length > 30) latencies.shift()
           if (e2es.length > 30) e2es.shift()
           if (withPose) latestBody = bodyFromPose(res.pose)
-          processFrame({ t: captured, hands: res.hands, body: latestBody, width: vw, height: vh })
+          processFrame({ t, hands: res.hands, body: latestBody, width: vw, height: vh }, mediaAt)
         })
         .catch((err) => {
           inFlight = false
@@ -225,7 +274,7 @@ export function useDetectionLoop({ source, videoRef, canvasRef, inference, onCom
         canvas.width = cw
         canvas.height = ch
       }
-      const map = coverMapper(cw, ch, size.w, size.h)
+      const map = videoMapper(cw, ch, size.w, size.h, display)
       if (source === 'demo') drawDemoBackdrop(ctx, cw, ch, latestBody, map, dpr)
       else ctx.clearRect(0, 0, cw, ch)
       drawBody(ctx, latestBody, map, dpr)

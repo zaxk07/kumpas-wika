@@ -14,12 +14,24 @@ export interface Mapper {
   (p: { x: number; y: number }): [number, number]
 }
 
-/** Map normalized source coords -> mirrored canvas pixels, matching CSS `object-fit: cover`. */
-export function coverMapper(cw: number, ch: number, sw: number, sh: number): Mapper {
-  const scale = Math.max(cw / sw, ch / sh)
+export interface MapOptions {
+  /** Flip horizontally (selfie view). Must match the CSS transform on the <video>. */
+  mirror: boolean
+  /** Must match the CSS `object-fit` on the <video>. */
+  fit: 'cover' | 'contain'
+}
+
+/** Map normalized source coords -> canvas pixels, matching the video's CSS `object-fit` and mirroring. */
+export function videoMapper(cw: number, ch: number, sw: number, sh: number, { mirror, fit }: MapOptions): Mapper {
+  const scale = fit === 'cover' ? Math.max(cw / sw, ch / sh) : Math.min(cw / sw, ch / sh)
   const ox = (cw - sw * scale) / 2
   const oy = (ch - sh * scale) / 2
-  return (p) => [cw - (p.x * sw * scale + ox), p.y * sh * scale + oy]
+  return mirror ? (p) => [cw - (p.x * sw * scale + ox), p.y * sh * scale + oy] : (p) => [p.x * sw * scale + ox, p.y * sh * scale + oy]
+}
+
+/** Map normalized source coords -> mirrored canvas pixels, matching CSS `object-fit: cover`. */
+export function coverMapper(cw: number, ch: number, sw: number, sh: number): Mapper {
+  return videoMapper(cw, ch, sw, sh, { mirror: true, fit: 'cover' })
 }
 
 export type Trails = Map<number, [number, number][]>

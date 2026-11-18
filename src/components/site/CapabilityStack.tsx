@@ -147,7 +147,7 @@ export function CapabilityStack() {
   const { scrollYProgress } = useScroll({ target: ref, offset: ['start start', 'end end'] })
   return (
     <section id="capabilities" className="mx-auto max-w-[1400px] px-4 pt-24 sm:px-6 sm:pt-32">
-      <SectionHeader index="03" kicker="Capabilities" title="Built to run anywhere a browser does" lede="What the pipeline buys you in practice." />
+      <SectionHeader index="04" kicker="Capabilities" title="Built to run anywhere a browser does" lede="What the pipeline buys you in practice." />
       <div ref={ref} className="relative mt-4">
         {CAPS.map((c, i) => (
           <StackCard key={c.title} cap={c} i={i} n={CAPS.length} progress={scrollYProgress} reduced={reduced} />
