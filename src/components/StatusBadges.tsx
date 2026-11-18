@@ -1,12 +1,7 @@
 import type { ModelStatus } from '../hooks/useLandmarkers'
 
 interface Props {
-  renderFps: number
   inferFps: number
-  latency: number
-  e2e: number
-  windowMs: number
-  samples: number
   model: ModelStatus
   delegate?: string
   thread?: string
@@ -26,7 +21,7 @@ function Badge({ label, value, tone = 'zinc', wide = false, title }: { label: st
   return (
     <div
       title={title}
-      className={`${wide ? 'hidden sm:flex' : 'flex'} items-center gap-1.5 rounded-md border border-white/10 bg-black/55 px-2 py-1 font-mono text-[11px] backdrop-blur`}
+      className={`${wide ? 'hidden sm:flex' : 'flex'} items-center gap-1.5 rounded-md border border-white/[0.08] bg-obsidian/70 px-2 py-1 font-mono text-[10px] tracking-wide uppercase backdrop-blur`}
     >
       <span className="text-zinc-500">{label}</span>
       <span className={`tabular-nums ${TONES[tone]}`}>{value}</span>
@@ -36,20 +31,12 @@ function Badge({ label, value, tone = 'zinc', wide = false, title }: { label: st
 
 const fpsTone = (v: number): Tone => (v >= 24 ? 'emerald' : v >= 12 ? 'amber' : v > 0 ? 'rose' : 'zinc')
 
-export function StatusBadges({ renderFps, inferFps, latency, e2e, windowMs, samples, model, delegate, thread, source, shape }: Props) {
+/** On-video badges. The headline FPS / latency / window / confidence live in the telemetry row below the video. */
+export function StatusBadges({ inferFps, model, delegate, thread, source, shape }: Props) {
   return (
     <div className="flex flex-wrap gap-1.5">
-      <Badge label="source" value={source} tone={source === 'off' ? 'zinc' : 'emerald'} />
-      <Badge label="fps" value={String(renderFps).padStart(2, '0')} tone={fpsTone(renderFps)} title="How smoothly the video overlay is being drawn, in frames per second" />
+      <Badge label="src" value={source} tone={source === 'off' ? 'zinc' : 'emerald'} />
       <Badge label="reads/s" value={String(inferFps).padStart(2, '0')} tone={fpsTone(inferFps)} title="How many times per second your hand is being read" />
-      <Badge
-        wide
-        label="latency"
-        value={source === 'demo' ? 'sim' : `${latency.toFixed(1)}ms`}
-        tone={source === 'demo' || latency === 0 ? 'zinc' : latency < 45 ? 'emerald' : 'amber'}
-        title={`How long hand tracking takes on each frame. From camera to result it’s about ${e2e.toFixed(0)} ms.`}
-      />
-      <Badge wide label="window" value={`${(windowMs / 1000).toFixed(1)}s`} title={`The last second of movement used to read moving signs (${samples} snapshots)`} />
       <Badge wide label="shape" value={shape} />
       <Badge
         label="tracking"

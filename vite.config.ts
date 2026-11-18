@@ -13,6 +13,19 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   // MediaPipe runs in a module worker that lazy-imports the tasks-vision bundle.
   worker: { format: 'es' },
+  build: {
+    rolldownOptions: {
+      output: {
+        // Long-lived vendor chunks: React and motion change far less often than the app.
+        codeSplitting: {
+          groups: [
+            { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+            { name: 'motion', test: /node_modules[\\/](motion|motion-dom|motion-utils|framer-motion)[\\/]/ },
+          ],
+        },
+      },
+    },
+  },
   define: {
     __MP_VERSION__: JSON.stringify(mpPkg.version),
   },

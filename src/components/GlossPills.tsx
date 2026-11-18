@@ -49,7 +49,7 @@ export function GlossPills({ tokens, standard, size = 'md', animate = true }: Pr
               initial={{ opacity: 0, scale: 0.85, y: 4 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.85 }}
-              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              transition={{ type: 'spring', stiffness: 520, damping: 32 }}
             >
               {content}
             </motion.span>

@@ -18,7 +18,7 @@ interface Props {
 const fmt = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
 const btn =
-  'inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-zinc-900 px-2.5 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-zinc-800 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40'
+  'inline-flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-surface-2 px-2.5 py-1.5 text-xs font-medium text-zinc-200 transition hover:border-white/20 hover:bg-zinc-800 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40'
 
 export const TranscriptPanel = memo(function TranscriptPanel({ phrases, mode, standard, autoSpeak, onToggleSpeak, onBackspace, onClear }: Props) {
   const [copied, setCopied] = useState(false)
@@ -41,10 +41,10 @@ export const TranscriptPanel = memo(function TranscriptPanel({ phrases, mode, st
   }
 
   return (
-    <aside className="flex h-full min-h-0 flex-col rounded-2xl border border-white/10 bg-zinc-950/80 backdrop-blur">
-      <div className="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
+    <aside className="flex h-full min-h-0 flex-col rounded-2xl border border-white/[0.08] bg-surface">
+      <div className="flex items-center justify-between gap-2 border-b border-white/[0.08] px-4 py-3">
         <div>
-          <h2 className="text-sm font-semibold text-zinc-100">Transcript</h2>
+          <h2 className="text-sm font-semibold tracking-tight text-fg">Transcript</h2>
           <p className="font-mono text-[11px] text-zinc-500">
             {filled.length} sentences · {signCount} signs
           </p>
@@ -71,7 +71,7 @@ export const TranscriptPanel = memo(function TranscriptPanel({ phrases, mode, st
           // Open phrases show the live, unpunctuated preview; closed ones the finalized sentence.
           const s = p.closed ? phraseSentence(p) : previewSentence(groupGlosses(p.entries))
           return (
-            <li key={p.key} className="rounded-xl border border-white/5 bg-zinc-900/40 p-2.5" data-testid="transcript-item">
+            <li key={p.key} className="rounded-xl border border-white/[0.06] bg-surface-2/60 p-2.5" data-testid="transcript-item">
               <div className="mb-1.5 flex items-center gap-2 font-mono text-[10px] text-zinc-500">
                 {fmt(p.entries[0].at)}
                 {!p.closed && (
@@ -101,7 +101,7 @@ export const TranscriptPanel = memo(function TranscriptPanel({ phrases, mode, st
         })}
       </ol>
 
-      <div className="flex flex-wrap gap-2 border-t border-white/10 px-4 py-3">
+      <div className="flex flex-wrap gap-2 border-t border-white/[0.08] px-4 py-3">
         <button type="button" className={btn} onClick={copy} disabled={!filled.length}>
           {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
           {copied ? 'Copied' : 'Copy subtitles'}

@@ -33,7 +33,7 @@ export function CaptionBar({ output, phrase, mode, standard, active }: Props) {
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 p-2 sm:p-4">
-      <div className="mx-auto max-w-4xl rounded-xl border border-white/10 bg-black/75 px-3 py-2 shadow-2xl backdrop-blur-md sm:px-4 sm:py-3">
+      <div className="mx-auto max-w-4xl rounded-xl border border-white/[0.08] bg-obsidian/80 px-3 py-2 shadow-2xl backdrop-blur-md sm:px-4 sm:py-3">
         {/* Line 1: live partial detection */}
         <div className="flex min-h-9 items-center gap-3" data-testid="caption-partial">
           {cand ? (
@@ -43,7 +43,7 @@ export function CaptionBar({ output, phrase, mode, standard, active }: Props) {
                 <div className="flex items-baseline gap-2">
                   <span
                     className={`truncate text-base font-semibold tracking-wide sm:text-lg ${
-                      output?.latched ? 'text-emerald-300' : output?.cooling ? 'text-amber-300' : 'text-lime-200'
+                      output?.latched ? 'text-emerald-400' : output?.cooling ? 'text-amber-300' : 'text-lime-200'
                     }`}
                   >
                     {signText(cand.id, mode)}
@@ -53,7 +53,7 @@ export function CaptionBar({ output, phrase, mode, standard, active }: Props) {
                 </div>
                 <div className="mt-1 h-1 overflow-hidden rounded-full bg-zinc-800">
                   <div
-                    className={`h-full rounded-full ${output?.latched ? 'bg-emerald-400' : output?.cooling ? 'bg-amber-400' : 'bg-lime-300'}`}
+                    className={`h-full rounded-full ${output?.latched ? 'bg-signal' : output?.cooling ? 'bg-amber-400' : 'bg-lime-300'}`}
                     style={{ width: `${(output?.progress ?? 0) * 100}%`, transition: 'width 80ms linear' }}
                   />
                 </div>
@@ -85,7 +85,7 @@ export function CaptionBar({ output, phrase, mode, standard, active }: Props) {
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.18 }}
+                transition={{ type: 'spring', stiffness: 520, damping: 32 }}
               >
                 {primary ? (
                   <p

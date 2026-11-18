@@ -1,13 +1,23 @@
 @import 'tailwindcss';
 
 @theme {
-  --font-sans: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  --color-obsidian: #07070a;
+  --color-obsidian: #09090b;
+  --color-surface: #111114;
+  --color-surface-2: #18181b;
+  --color-hairline: rgb(255 255 255 / 0.08);
+  --color-fg: #fafafa;
+  --color-signal: #10b981;
 }
 
 :root {
   color-scheme: dark;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 72px;
 }
 
 html,
@@ -18,57 +28,36 @@ body,
 
 body {
   margin: 0;
+  overflow-x: clip;
   background: var(--color-obsidian);
   color: var(--color-zinc-200);
   font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01';
   -webkit-font-smoothing: antialiased;
 }
 
-/* Animated dark grid.
-   The mask lives on a static wrapper and the grid layer drifts with `transform`, so the
-   animation runs on the compositor. (Animating background-position repaints the whole
-   viewport every frame — measured ~23 -> 34 fps on an Intel UHD iGPU when removed.) */
-.studio-grid-mask {
-  mask-image: radial-gradient(ellipse at 50% 20%, black 30%, transparent 80%);
-}
-
-.studio-grid {
-  inset: -44px 0 0 -44px;
-  background-image:
-    linear-gradient(to right, rgb(255 255 255 / 0.035) 1px, transparent 1px),
-    linear-gradient(to bottom, rgb(255 255 255 / 0.035) 1px, transparent 1px);
-  background-size: 44px 44px;
-  animation: grid-drift 40s linear infinite;
-  will-change: transform;
-}
-
-@keyframes grid-drift {
-  to {
-    transform: translate3d(44px, 44px, 0);
-  }
-}
-
-.glyph-float {
-  animation: glyph-float 18s ease-in-out infinite;
-}
-
-@keyframes glyph-float {
-  0%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.05;
-  }
-  50% {
-    transform: translateY(-24px);
-    opacity: 0.1;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .studio-grid,
-  .glyph-float {
-    animation: none;
+  html {
+    scroll-behavior: auto;
   }
+}
+
+::selection {
+  background: rgb(16 185 129 / 0.3);
+  color: var(--color-fg);
+}
+
+:focus-visible {
+  outline: 2px solid rgb(16 185 129 / 0.7);
+  outline-offset: 2px;
+}
+
+.hairline {
+  border: 1px solid var(--color-hairline);
+}
+
+.glyph-mask {
+  mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
 }
 
 .scrollbar-thin {
