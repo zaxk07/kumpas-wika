@@ -13,8 +13,15 @@ export const HAND_MODEL_URL =
 export const POSE_MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task'
 
-/** Inference input size. The display stays full resolution; MediaPipe only needs a small frame. */
-export const INFER_WIDTH = 640
+/**
+ * Inference input size. Frames are downscaled (and optionally cropped to a region of
+ * interest) to 480 x 270 for 16:9 video before they reach MediaPipe; the display stays full
+ * resolution. The palm detector runs at 192 px internally, so this loses no accuracy
+ * but makes the frame copy from large screen captures much cheaper.
+ */
+export const INFER_WIDTH = 480
+/** Height cap: a 16:9 frame becomes 480 x 270; taller crops (a portrait signer) may use up to 360. */
+export const INFER_MAX_H = 360
 
 export type Delegate = 'GPU' | 'CPU'
 
@@ -34,10 +41,12 @@ async function createHand(fileset: WasmFileset, delegate: Delegate) {
   return HandLandmarker.createFromOptions(fileset, {
     baseOptions: { modelAssetPath: HAND_MODEL_URL, delegate },
     runningMode: 'VIDEO',
-    numHands: 1, // all supported signs are one-handed; tracking one hand roughly halves landmark cost
-    minHandDetectionConfidence: 0.5,
-    minHandPresenceConfidence: 0.5,
-    minTrackingConfidence: 0.5,
+    // Both hands: two-handed signs, and the recognizer can follow whichever hand is signing.
+    numHands: 2,
+    // Slightly permissive, so fast-moving or motion-blurred hands don't drop out mid-sign.
+    minHandDetectionConfidence: 0.45,
+    minHandPresenceConfidence: 0.45,
+    minTrackingConfidence: 0.45,
   })
 }
 
@@ -149,4 +158,9 @@ let lastTs = 0
 export function nextTimestamp(at = performance.now()): number {
   lastTs = at > lastTs ? at : lastTs + 1
   return lastTs
+}
+
+/** First category name per detected hand ('Left' / 'Right'). */
+export function labels(h: { categoryName: string }[][] | undefined): string[] {
+  return (h ?? []).map((c) => c[0]?.categoryName ?? '')
 }

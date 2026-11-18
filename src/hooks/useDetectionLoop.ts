@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { demoFrame } from '../lib/demo'
 import { drawBody, drawDemoBackdrop, drawHands, videoMapper, type MapOptions, type Trails } from '../lib/draw'
-import { SignEngine, type EngineOutput } from '../lib/engine'
+import { SignEngine, type EngineOutput, type SpeedPreset } from '../lib/engine'
 import type { InferenceClient } from '../lib/inference'
-import { INFER_WIDTH } from '../lib/mediapipe'
-import type { Detection, HandLandmarks, InputFrame, SignId, Standard, UpperBody } from '../lib/types'
+import { INFER_MAX_H, INFER_WIDTH } from '../lib/mediapipe'
+import { FULL_FRAME, type Roi } from '../lib/roi'
+import type { Detection, Handed, HandLandmarks, InputFrame, Pt, SignId, Standard, UpperBody } from '../lib/types'
 
 /** camera = webcam, video = uploaded file, screen = captured tab or window. */
 export type Source = 'camera' | 'video' | 'screen' | 'demo' | 'off'
@@ -66,7 +67,21 @@ interface Options {
   onTick: (t: number) => void
   threshold: number
   standard: Standard
+  /** Lock-in speed preset (Fluent for natural-speed signing and video, Standard for practice). */
+  speed: SpeedPreset
+  /** Optional crop (normalized video coords) applied before inference, e.g. a captured tab's video player. */
+  roiRef?: RefObject<Roi | null>
 }
+
+/**
+ * MediaPipe labels handedness as if the image were a mirrored selfie. Frames here are
+ * un-mirrored (webcam, file, captured tab), so its 'Left' is the signer's right hand.
+ */
+const signerHand = (label: string): Handed | undefined => (label === 'Left' ? 'R' : label === 'Right' ? 'L' : undefined)
+
+/** Map landmarks from the cropped inference frame back to full-frame normalized coordinates. */
+const uncrop = (pts: { x: number; y: number; z: number; visibility?: number }[], r: Roi) =>
+  pts.map((q) => ({ x: r.x + q.x * r.w, y: r.y + q.y * r.h, z: q.z * r.w, visibility: q.visibility }))
 
 function bodyFromPose(lms: { x: number; y: number; z: number; visibility?: number }[] | null | undefined): UpperBody | null {
   if (!lms || lms.length < 17) return null
@@ -101,7 +116,7 @@ function computeHint(source: Source, out: EngineOutput | null, lum: number | nul
 
 const median = (v: number[]) => (v.length ? [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)] : 0)
 
-export function useDetectionLoop({ source, videoRef, canvasRef, inference, onCommit, onTick, threshold, standard }: Options): LiveState {
+export function useDetectionLoop({ source, videoRef, canvasRef, inference, onCommit, onTick, threshold, standard, speed, roiRef }: Options): LiveState {
   const idle: LiveState = {
     output: null,
     renderFps: 0,
@@ -121,6 +136,7 @@ export function useDetectionLoop({ source, videoRef, canvasRef, inference, onCom
   }, [onCommit, onTick])
   useEffect(() => engine.setThreshold(threshold), [engine, threshold])
   useEffect(() => engine.setStandard(standard), [engine, standard])
+  useEffect(() => engine.setSpeed(speed), [engine, speed])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -134,6 +150,11 @@ export function useDetectionLoop({ source, videoRef, canvasRef, inference, onCom
     lumCanvas.width = 32
     lumCanvas.height = 18
     const lumCtx = lumCanvas.getContext('2d', { willReadFrequently: true })
+    // Inference frame: the (cropped) video drawn into a small canvas. drawImage from a <video> stays
+    // on the GPU, which is far cheaper than createImageBitmap resizing a 1440p screen capture.
+    const offscreen = typeof OffscreenCanvas !== 'undefined'
+    const inferCanvas: OffscreenCanvas | HTMLCanvasElement = offscreen ? new OffscreenCanvas(INFER_WIDTH, 270) : document.createElement('canvas')
+    const inferCtx = inferCanvas.getContext('2d', { alpha: false }) as OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null
 
     let raf = 0
     let cancelled = false
@@ -158,7 +179,9 @@ export function useDetectionLoop({ source, videoRef, canvasRef, inference, onCom
     const stepTimes: number[] = []
 
     let latestHands: HandLandmarks[] = []
+    let latestHanded: Handed[] = []
     let shownHands: HandLandmarks[] = []
+    let shownHanded: Handed[] = []
     let latestBody: UpperBody | null = null
     let size = { w: 1280, h: 720 }
     let out: EngineOutput | null = null
@@ -170,7 +193,10 @@ export function useDetectionLoop({ source, videoRef, canvasRef, inference, onCom
       out = engine.process(frame)
       if (out.committed) onCommitRef.current(out.committed, frame.t, mediaAt)
       onTickRef.current(frame.t)
-      latestHands = frame.hands
+      // Keep a stable draw order (right hand first) so the smoothed overlay never morphs one hand into the other.
+      const order = frame.hands.slice(0, 2).map((_, i) => i).sort((a, b) => (out!.handed[a] === 'R' ? 0 : 1) - (out!.handed[b] === 'R' ? 0 : 1))
+      latestHands = order.map((i) => frame.hands[i])
+      latestHanded = order.map((i) => out!.handed[i] ?? 'R')
       latestBody = frame.body
       size = { w: frame.width, h: frame.height }
       stepTimes.push(performance.now())
@@ -214,12 +240,27 @@ export function useDetectionLoop({ source, videoRef, canvasRef, inference, onCom
         t = mediaClock
       }
 
+      if (!inferCtx) return
       inFlight = true
       const vw = video.videoWidth
       const vh = video.videoHeight
       const captured = now
       const withPose = inferCount++ % POSE_EVERY === 0
-      createImageBitmap(video, { resizeWidth: INFER_WIDTH, resizeHeight: Math.round((INFER_WIDTH * vh) / vw), resizeQuality: 'low' })
+      // Crop to the region of interest, then fit within INFER_WIDTH x INFER_MAX_H (480 x 270 for 16:9).
+      const roi = (source === 'video' || source === 'screen' ? roiRef?.current : null) ?? FULL_FRAME
+      const sw = roi.w * vw
+      const sh = roi.h * vh
+      const scale = Math.min(1, INFER_WIDTH / sw, INFER_MAX_H / sh)
+      const w = Math.max(16, Math.round(sw * scale))
+      const h = Math.max(16, Math.round(sh * scale))
+      if (inferCanvas.width !== w || inferCanvas.height !== h) {
+        inferCanvas.width = w
+        inferCanvas.height = h
+      }
+      inferCtx.drawImage(video, roi.x * vw, roi.y * vh, sw, sh, 0, 0, w, h)
+      const frameBitmap: Promise<ImageBitmap> =
+        inferCanvas instanceof HTMLCanvasElement ? createImageBitmap(inferCanvas) : Promise.resolve(inferCanvas.transferToImageBitmap())
+      frameBitmap
         .then((bmp) => {
           if (cancelled) {
             bmp.close()
@@ -234,8 +275,11 @@ export function useDetectionLoop({ source, videoRef, canvasRef, inference, onCom
           e2es.push(performance.now() - captured)
           if (latencies.length > 30) latencies.shift()
           if (e2es.length > 30) e2es.shift()
-          if (withPose) latestBody = bodyFromPose(res.pose)
-          processFrame({ t, hands: res.hands, body: latestBody, width: vw, height: vh }, mediaAt)
+          if (withPose) latestBody = bodyFromPose(res.pose ? uncrop(res.pose, roi) : null)
+          const hands: Pt[][] = res.hands.map((hd) => uncrop(hd, roi).map(({ x, y, z }) => ({ x, y, z })))
+          const labels = res.handedness.map(signerHand)
+          const handed = labels.every((l): l is Handed => !!l) ? labels : undefined
+          processFrame({ t, hands, handed, body: latestBody, width: vw, height: vh }, mediaAt)
         })
         .catch((err) => {
           inFlight = false
@@ -258,7 +302,10 @@ export function useDetectionLoop({ source, videoRef, canvasRef, inference, onCom
       lastRender = now
       // Ease displayed landmarks toward the latest inference so ~30 Hz tracking renders smoothly at display rate.
       const k = 1 - Math.exp(-dt / 35)
-      if (shownHands.length !== latestHands.length) shownHands = latestHands.map((h) => h.map((p) => ({ ...p })))
+      if (shownHands.length !== latestHands.length || shownHanded.join() !== latestHanded.join()) {
+        shownHands = latestHands.map((h) => h.map((p) => ({ ...p })))
+        shownHanded = latestHanded
+      }
       else
         shownHands = shownHands.map((h, hi) =>
           h.map((p, i) => {
@@ -279,7 +326,8 @@ export function useDetectionLoop({ source, videoRef, canvasRef, inference, onCom
       else ctx.clearRect(0, 0, cw, ch)
       drawBody(ctx, latestBody, map, dpr)
       const accent = out?.latched ? '#34d399' : out?.cooling ? '#f59e0b' : out?.candidate ? '#a3e635' : '#e4e4e7'
-      drawHands(ctx, shownHands, map, dpr, trails, accent)
+      const two = !!out?.twoHanded
+      drawHands(ctx, shownHands, shownHanded, map, dpr, trails, accent, (h) => !!out?.candidate && (two || h === out.activeHand))
       renderTimes.push(now)
     }
 
@@ -312,7 +360,7 @@ export function useDetectionLoop({ source, videoRef, canvasRef, inference, onCom
       cancelAnimationFrame(raf)
       ctx.clearRect(0, 0, canvas.width, canvas.height)
     }
-  }, [source, inference, videoRef, canvasRef, engine])
+  }, [source, inference, videoRef, canvasRef, engine, roiRef])
 
   return source === 'off' ? idle : live
 }

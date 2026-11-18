@@ -7,10 +7,11 @@
  *  4. Anti-spam: a long static hold (with tracking dropouts) locks once; a repeat
  *     after a hand reset locks again; the velocity gate blocks stray static letters.
  *  5. Gloss -> natural sentence grammar.
+ *  6. Fluent preset, peak-hold commit, two-handed signs and switching hands.
  */
 import { buildHand, COVERAGE_SCRIPT, DEMO_SCRIPT, demoFrame, POSES, scriptLength, SHOWCASE, type DemoShape, type Segment } from '../src/lib/demo'
 import { FINALIZE_MS } from '../src/hooks/useSubtitles'
-import { SignEngine } from '../src/lib/engine'
+import { SignEngine, type SpeedPreset } from '../src/lib/engine'
 import { glossToSentence, groupGlosses } from '../src/lib/grammar'
 import { analyzeHand, classifyShape } from '../src/lib/handshape'
 import type { InputFrame, SignId } from '../src/lib/types'
@@ -37,8 +38,9 @@ for (const shape of Object.keys(POSES) as DemoShape[]) {
 check(`handshapes: ${Object.keys(POSES).length} poses × 12 variants`, shapeErrors.length === 0, shapeErrors.slice(0, 12).join(', '))
 
 // ---- 2/3. Scripted performances ------------------------------------------
-function run(script: Segment[], fps: number, loops = 1) {
+function run(script: Segment[], fps: number, loops = 1, speed: SpeedPreset = 'standard') {
   const engine = new SignEngine()
+  engine.setSpeed(speed)
   const committed: SignId[] = []
   const times: number[] = []
   const total = scriptLength(script)
@@ -75,6 +77,10 @@ function diff(expected: SignId[], committed: SignId[]) {
 for (const fps of [10, 15, 24, 30, 60]) {
   const { committed, expected } = run(COVERAGE_SCRIPT, fps)
   check(`coverage @${fps}fps: ${expected.length} signs, each once, in order`, committed.join() === expected.join(), diff(expected, committed))
+}
+for (const fps of [10, 15, 30, 60]) {
+  const { committed, expected } = run(COVERAGE_SCRIPT, fps, 1, 'fluent')
+  check(`fluent preset coverage @${fps}fps: ${expected.length} signs, each once, in order`, committed.join() === expected.join(), diff(expected, committed))
 }
 for (const fps of [15, 30, 60]) {
   const { committed, expected, phrases, maxGap } = run(DEMO_SCRIPT, fps, 2)
@@ -153,11 +159,91 @@ const CASES: [string, string, string][] = [
   ['NO_SNAP', 'Hindi.', 'No.'],
   ['HELLO_SALUTE IKAW', 'Kumusta ka?', 'How are you?'],
   ['L O L A', 'Lola.', 'Lola.'],
+  ['NICE_MEET', 'Ikinagagalak kitang makilala!', 'Nice to meet you!'],
+  ['KUMUSTA NICE_MEET', 'Kumusta! Ikinagagalak kitang makilala!', 'Hello! Nice to meet you!'],
+  ['TAPOS', 'Tapos na.', "It's finished."],
 ]
 let key = 0
 for (const [gloss, fil, en] of CASES) {
   const s = glossToSentence(groupGlosses(gloss.split(' ').map((id) => ({ id: id as SignId, key: key++ }))))
   check(`grammar: ${gloss} -> "${fil}" / "${en}"`, s.fil === fil && s.en === en, `got "${s.fil}" / "${s.en}" [${s.rules.join(', ')}]`)
+}
+
+// ---- 6. Fast signers, two hands -------------------------------------------
+// Peak-hold: a sign recognized clearly but held for less than the lock time, then straight into the next one.
+const peak = holdScenario([{ shape: 'ILY', dur: 0.55 }, { shape: 'L', dur: 0.7 }])
+check('peak-hold: brief MAHAL KITA straight into L commits both', peak.join() === 'MAHAL_KITA,L', peak.join(' '))
+const tooBrief = holdScenario([{ shape: 'ILY', dur: 0.3 }, { shape: null, dur: 0.6 }])
+check('peak-hold: a flash shorter than the peak window does not commit', tooBrief.join() === '', tooBrief.join(' '))
+
+const ease2 = (u: number) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u))
+const twoHand: [string, Segment][] = [
+  [
+    'TULONG',
+    {
+      sign: 'TULONG',
+      shape: 'THUMB_UP',
+      dur: 1.4,
+      base: [0.52, 0.62],
+      motion: (s) => ({ dy: -0.25 * ease2(s / 1.0) }),
+      pair: { shape: 'B', base: [0.5, 0.74], motion: (s) => ({ dy: -0.25 * ease2(s / 1.0), rot: 80 }) },
+    },
+  ],
+  [
+    'ANO',
+    {
+      sign: 'ANO',
+      shape: 'OPEN',
+      dur: 1.6,
+      base: [0.64, 0.55],
+      motion: (s) => ({ dx: 0.02 * Math.sin(2 * Math.PI * 2.5 * s), rot: 80 }),
+      pair: { shape: 'OPEN', base: [0.36, 0.55], motion: (s) => ({ dx: -0.02 * Math.sin(2 * Math.PI * 2.5 * s), rot: 80 }) },
+    },
+  ],
+]
+for (const [want, seg] of twoHand)
+  for (const fps of [15, 30]) {
+    const { committed } = run([{ sign: null, dur: 0.5 }, seg, { sign: null, dur: 0.8 }], fps)
+    check(`two-handed ${want} @${fps}fps`, committed.join() === want, committed.join(' '))
+  }
+
+// Irregular frame timing (a throttled tab, a busy device): the showcase must still commit each sign once.
+for (const speed of ['standard', 'fluent'] as const)
+  for (const [lo, hi] of [
+    [30, 150],
+    [60, 250],
+  ]) {
+    let seed = 7
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647
+    const engine = new SignEngine()
+    engine.setSpeed(speed)
+    const got: SignId[] = []
+    for (let t = 0; t < scriptLength(DEMO_SCRIPT) * 1000; t += Math.min(150, lo + rnd() * (hi - lo))) {
+      const out = engine.process(demoFrame(t / 1000, t))
+      if (out.committed) got.push(out.committed.id)
+    }
+    const want = SHOWCASE.flat()
+    check(`jittery frames ${lo}-${hi} ms (${speed}): showcase commits each sign once`, got.join() === want.join(), diff(want, got))
+  }
+
+// Switching hands: the right hand signs, drops to rest (still in view, low), then the left hand
+// signs. Each hand keeps its own window, so neither sign is lost or doubled.
+{
+  const engine = new SignEngine()
+  const commits: SignId[] = []
+  const fps = 30
+  let t = 0
+  const restR = (k: number) => buildHand('OPEN', { wx: 0.62, wy: 0.98, palm: 0.15 }, k)
+  const phases: [number, (k: number) => InputFrame['hands'], InputFrame['handed']][] = [
+    [1.2, (k) => [buildHand('ILY', { wx: 0.6, wy: 0.62, palm: 0.17 }, k)], ['R']],
+    [1.4, (k) => [restR(k), buildHand('POINT_OUT', { wx: 0.4, wy: 0.62, palm: 0.17, mirror: true }, k)], ['R', 'L']],
+  ]
+  for (const [dur, hands, handed] of phases)
+    for (let k = 0; k < dur * fps; k++, t += 1000 / fps) {
+      const out = engine.process({ t, hands: hands(t / 1000), handed, body: null, width: 1280, height: 720 })
+      if (out.committed) commits.push(out.committed.id)
+    }
+  check('hand switch: right hand MAHAL KITA, then left hand IKAW', commits.join() === 'MAHAL_KITA,IKAW', commits.join(' '))
 }
 
 console.log(failures ? `\n${failures} check(s) FAILED` : '\nALL CHECKS PASSED')

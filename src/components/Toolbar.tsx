@@ -1,10 +1,14 @@
-import { CircleAlert, CircleCheck, Info, SlidersHorizontal } from 'lucide-react'
+import { CircleAlert, CircleCheck, Gauge, Info, SlidersHorizontal } from 'lucide-react'
 import type { Hint } from '../hooks/useDetectionLoop'
+import { TIMING, type SpeedPreset } from '../lib/engine'
+import { Segmented } from './Segmented'
 
 interface Props {
   threshold: number
   onThresholdChange: (v: number) => void
   hint: Hint
+  speed: SpeedPreset
+  onSpeedChange: (s: SpeedPreset) => void
 }
 
 const HINT_STYLE = {
@@ -14,11 +18,24 @@ const HINT_STYLE = {
 }
 
 /** Studio strip, second row: confidence calibration and the hand alignment / lighting hint. */
-export function Toolbar({ threshold, onThresholdChange, hint }: Props) {
+export function Toolbar({ threshold, onThresholdChange, hint, speed, onSpeedChange }: Props) {
   const { cls, Icon } = HINT_STYLE[hint.level]
   const pct = Math.round(threshold * 100)
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <div className="flex items-center gap-1.5" title={`How fast a sign locks in: Fluent ${TIMING.fluent.staticMs} ms, Standard ${TIMING.standard.staticMs} ms`}>
+        <Gauge size={14} className="text-zinc-500" aria-hidden />
+        <Segmented
+          label="Signer speed"
+          size="sm"
+          value={speed}
+          onChange={onSpeedChange}
+          options={[
+            { id: 'fluent', label: 'Fluent / fast video', title: `Locks in ${TIMING.fluent.staticMs} ms, for natural-speed signers and videos` },
+            { id: 'standard', label: 'Standard / practice', title: `Locks in ${TIMING.standard.staticMs} ms, steadier for learners` },
+          ]}
+        />
+      </div>
       <label
         className="hairline flex items-center gap-2 rounded-lg bg-obsidian/80 px-2.5 py-1.5"
         title="How sure the app should be before it counts a sign. Turn it down if your camera is dim and signs are being missed; turn it up if it’s picking up signs you didn’t mean."

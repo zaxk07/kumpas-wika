@@ -2,7 +2,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { animate, motion, useMotionValue, useReducedMotion, type PanInfo } from 'motion/react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { buildHand, DEMO_H, DEMO_W } from '../../lib/demo'
-import { LOCK_DYNAMIC_MS, LOCK_STATIC_MS, REPEAT_COOLDOWN_MS, WINDOW_MS } from '../../lib/engine'
+import { FLUENT_LOCK_MS, LOCK_STATIC_MS, REPEAT_COOLDOWN_MS, TIMING, WINDOW_MS } from '../../lib/engine'
 import { glossToSentence, groupGlosses } from '../../lib/grammar'
 import type { SignId } from '../../lib/types'
 import { GlossPills } from '../GlossPills'
@@ -146,7 +146,7 @@ function TemporalVisual({ active }: { active: boolean }) {
         </text>
         <line x1="86" y1="182" x2="86" y2="188" stroke="rgb(34 211 238 / 0.9)" />
         <text x="100" y="185">
-          static lock {LOCK_STATIC_MS} ms · moving lock {LOCK_DYNAMIC_MS} ms
+          lock {FLUENT_LOCK_MS} ms fluent · {LOCK_STATIC_MS} ms standard
         </text>
       </g>
     </svg>
@@ -201,8 +201,8 @@ const SPREADS: Spread[] = [
   {
     kicker: 'Spatial',
     title: '21-Point Spatial Landmark Extraction',
-    body: 'MediaPipe Hand Landmarker returns 21 joints per hand on every frame. Each frame is mirrored to match the selfie view, re-centred on the wrist, rotated so the fingers point along one axis, and scaled so the palm length is 1. The same handshape reads the same near or far, tilted or level, left hand or right.',
-    points: ['Finger extension measured in 3D, so a finger pointing at the camera still counts', 'Wrist-relative, palm-normalized geometry', 'Upper-body pose anchors chin and chest signs'],
+    body: 'MediaPipe Hand Landmarker returns 21 joints for each of up to two hands on every frame. Each frame is mirrored to match the selfie view, re-centred on the wrist, rotated so the fingers point along one axis, and scaled so the palm length is 1. The same handshape reads the same near or far, tilted or level, left hand or right.',
+    points: ['Finger extension measured in 3D, so a finger pointing at the camera still counts', 'Both hands tracked, each with its own motion window, for two-handed signs', 'Upper-body pose anchors chin and chest signs'],
     visual: (a) => <LandmarkVisual active={a} />,
   },
   {
@@ -210,8 +210,8 @@ const SPREADS: Spread[] = [
     title: 'Sliding-Window Temporal Motion Analysis',
     body: `Every reading is time-stamped into a ${(WINDOW_MS / 1000).toFixed(1)} s ring buffer. From that window the engine derives velocity vectors (dx, dy), net displacement, path length and oscillation zero-crossings, which separate a wave from a nod from a circle.`,
     points: [
-      `Static signs lock after ${LOCK_STATIC_MS} ms of a still, stable shape`,
-      `Moving signs lock after ${LOCK_DYNAMIC_MS} ms of matching motion`,
+      `Signs lock after ${FLUENT_LOCK_MS} ms (Fluent) or ${LOCK_STATIC_MS} ms (Standard) of a steady match`,
+      `A sign held at ${Math.round(TIMING.fluent.peakConf * 100)}%+ for ${TIMING.fluent.peakMs} ms still counts if you move straight on`,
       `${REPEAT_COOLDOWN_MS} ms refractory gate stops repeat spam`,
     ],
     visual: (a) => <TemporalVisual active={a} />,

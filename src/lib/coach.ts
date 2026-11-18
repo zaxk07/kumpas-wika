@@ -46,6 +46,10 @@ const WORDS: Partial<Record<SignId, Target>> = {
   ANO: { shapes: OPENISH, shapeTip: 'an open hand turned sideways', moveTip: 'Shake it gently side to side' },
   TUBIG: { shapes: ['W'], shapeTip: 'three middle fingers up (W)', moveTip: 'Hold the W up at your chin' },
   KAIN: { shapes: ['O'], shapeTip: 'fingertips touching your thumb (O)', moveTip: 'Bring the O up to your mouth' },
+  NICE_MEET: { shapes: ['INDEX', 'D', 'POINT_OUT'], shapeTip: 'both index fingers up, palms facing', moveTip: 'Bring the two hands together until the fingers meet' },
+  PAMILYA: { shapes: ['F'], shapeTip: 'an F with both hands: index and thumb touching', moveTip: 'Start side by side, then circle both hands outward' },
+  MAGKASAMA: { shapes: [...FISTISH, 'THUMB_UP'], shapeTip: 'two fists side by side, thumbs up', moveTip: 'Move both fists together in a small circle' },
+  TAPOS: { shapes: OPENISH, shapeTip: 'both open hands, palms toward you', moveTip: 'Flick both hands over so the palms face out' },
 }
 
 function targetFor(id: SignId): Target {
@@ -94,6 +98,8 @@ export function assess(target: SignId, out: EngineOutput | null): CoachFeedback 
   if (!out || !out.hasHand) return { state: 'nohand', text: 'Raise your hand into the guide zone, at chest height', score: 0 }
 
   const cand = out.candidate
+  if (SIGNS[target].twoHanded && out.handed.length < 2 && cand?.id !== target)
+    return { state: 'shape', text: 'This sign uses both hands. Bring your other hand into the zone too', score: 0.1 }
   if (cand?.id === target) {
     if (out.latched) return { state: 'matched', text: 'Matched', score: 1 }
     if (out.cooling) return { state: 'cooling', text: 'Already counted. Lower your hand, then sign it again', score: 0.9 }

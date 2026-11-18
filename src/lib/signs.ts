@@ -24,11 +24,37 @@ export interface SignInfo {
   note?: string
   /** Short label distinguishing two forms with the same meaning (e.g. wave vs salute). */
   variant?: string
+  /** Signed with both hands. */
+  twoHanded?: boolean
 }
 
 const BOTH: SignInfo['standards'] = ['FSL', 'ASL']
 
 const WORDS: Record<WordSignId, Omit<SignInfo, 'id'>> = {
+  NICE_MEET: {
+    fil: 'Ikinagagalak kitang makilala', en: 'Nice to meet you', glossFSL: 'MAGKAKILALA', glossASL: 'MEET', kind: 'dynamic', motion: true, standards: BOTH, twoHanded: true,
+    steps: ['Hold up both index fingers a little apart, palms facing each other.', 'Bring the hands together until the two fingers meet.'],
+    cue: 'Itaas ang dalawang hintuturo nang magkalayo, saka pagtagpuin.',
+    note: 'Full ASL says NICE + MEET + YOU. Kumpas reads the MEET movement, the two index fingers coming together.',
+  },
+  PAMILYA: {
+    fil: 'Pamilya', en: 'Family', glossFSL: 'PAMILYA', glossASL: 'FAMILY', kind: 'dynamic', motion: true, standards: BOTH, twoHanded: true,
+    steps: ['Make an F with both hands: index finger and thumb touching, the other fingers up.', 'Start with the hands side by side, then circle them outward until the pinky sides meet.'],
+    cue: 'Gumawa ng F sa dalawang kamay, magkatabi; iikot palabas hanggang magtagpo ang mga hinliliit.',
+    note: 'Recognized in its ASL-derived form.',
+  },
+  MAGKASAMA: {
+    fil: 'Magkasama', en: 'Together', glossFSL: 'MAGKASAMA', glossASL: 'TOGETHER', kind: 'dynamic', motion: true, standards: BOTH, twoHanded: true,
+    steps: ['Make two fists with the thumbs up and hold them side by side, knuckles touching.', 'Keeping them together, move both hands in a small circle.'],
+    cue: 'Dalawang kamao na magkadikit; igalaw nang paikot nang magkasama.',
+    note: 'Recognized in its ASL-derived form.',
+  },
+  TAPOS: {
+    fil: 'Tapos', en: 'Finished', glossFSL: 'TAPOS', glossASL: 'FINISH', kind: 'dynamic', motion: true, standards: BOTH, twoHanded: true,
+    steps: ['Hold both open hands up in front of you, palms facing you.', 'Flick them over so the palms face out.'],
+    cue: 'Dalawang bukas na palad na nakaharap sa iyo; ibaling palabas nang mabilis.',
+    note: 'Recognized in its ASL-derived form.',
+  },
   KUMUSTA: {
     fil: 'Kumusta', en: 'Hello', glossFSL: 'KUMUSTA', glossASL: 'HELLO (wave)', kind: 'dynamic', motion: true, standards: BOTH, variant: 'wave',
     steps: ['Hold an open palm near your shoulder, fingers relaxed and apart.', 'Give a relaxed side-to-side wave, two or three times.'],
@@ -200,6 +226,7 @@ export const SIGNS: Record<SignId, SignInfo> = {
 export const WORD_ORDER: WordSignId[] = [
   'KUMUSTA', 'HELLO_SALUTE', 'PAALAM', 'SALAMAT', 'WALANG_ANUMAN', 'OO', 'HINDI', 'NO_SNAP', 'PAKIUSAP', 'PATAWAD',
   'TULONG', 'MAHAL_KITA', 'MAGALING', 'MALI', 'AKO', 'IKAW', 'GUSTO', 'KAILANGAN', 'SAAN', 'ANO', 'TUBIG', 'KAIN',
+  'NICE_MEET', 'PAMILYA', 'MAGKASAMA', 'TAPOS',
 ]
 
 export const isLetter = (id: SignId): id is Letter => id.length === 1

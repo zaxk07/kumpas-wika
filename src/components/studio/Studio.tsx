@@ -1,4 +1,4 @@
-import { Camera, GraduationCap, Loader2, MonitorUp, Route, Sparkles, Square, Upload } from 'lucide-react'
+import { Camera, Crop, GraduationCap, Loader2, Maximize, MonitorUp, Route, ScanSearch, Sparkles, Square, Upload } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useId, useRef, useState, type DragEvent, type ReactNode, type RefObject } from 'react'
 import { displayFor, type LiveState, type Source } from '../../hooks/useDetectionLoop'
@@ -6,7 +6,8 @@ import type { ModelStatus } from '../../hooks/useLandmarkers'
 import type { Practice } from '../../hooks/usePractice'
 import type { Phrase } from '../../hooks/useSubtitles'
 import { canCaptureScreen, VIDEO_ACCEPT, type InputKind, type InputStatus, type LoadedFile } from '../../hooks/useVideoInput'
-import type { EngineOutput } from '../../lib/engine'
+import type { EngineOutput, SpeedPreset } from '../../lib/engine'
+import type { Roi } from '../../lib/roi'
 import { SIGNS } from '../../lib/signs'
 import type { SignId, Standard, SubtitleMode } from '../../lib/types'
 import { CaptionBar } from '../CaptionBar'
@@ -17,6 +18,7 @@ import { Toolbar } from '../Toolbar'
 import { TranscriptPanel } from '../TranscriptPanel'
 import { SectionHeader } from '../site/SectionHeader'
 import { CoachChip, CoachPanel } from './CoachPanel'
+import { RoiCropper } from './RoiCropper'
 import { VideoTransport } from './VideoTransport'
 
 const STANDARDS = [
@@ -67,6 +69,17 @@ interface Props {
   onStartTour: () => void
   /** Show the hand framing guide (tutorial step or practice without a hand). */
   showGuide: boolean
+  speed: SpeedPreset
+  onSpeedChange: (s: SpeedPreset) => void
+  /** Crop applied before inference (video / tab sources), null = full frame. */
+  roi: Roi | null
+  cropEditing: boolean
+  onToggleCrop: () => void
+  onRoiChange: (r: Roi) => void
+  onAutoCrop: () => void
+  onResetCrop: () => void
+  autoCropBusy: boolean
+  cropMessage: string | null
 }
 
 function Tile({ label, value, unit, tone = 'zinc', meter }: { label: string; value: string; unit?: string; tone?: 'zinc' | 'emerald' | 'amber' | 'rose'; meter?: number }) {
@@ -277,6 +290,40 @@ export function Studio({ videoRef, canvasRef, ...p }: Props) {
                   <span className={`absolute top-0.5 size-3 rounded-full bg-white transition-all ${p.demo ? 'left-3.5' : 'left-0.5'}`} />
                 </span>
               </button>
+              {(source === 'video' || source === 'screen') && (
+                <div className="flex flex-wrap items-center gap-1.5" data-testid="crop-controls">
+                  <button
+                    type="button"
+                    aria-pressed={p.cropEditing}
+                    onClick={p.onToggleCrop}
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition active:scale-[0.97] ${
+                      p.cropEditing || p.roi ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' : 'border-white/[0.08] bg-obsidian/80 text-zinc-300 hover:border-white/20'
+                    }`}
+                  >
+                    <Crop size={13} /> {p.cropEditing ? 'Done cropping' : 'Crop to video player'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={p.onAutoCrop}
+                    disabled={p.autoCropBusy}
+                    title="Find the playing video automatically (it should be playing)"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-obsidian/80 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition hover:border-white/20 active:scale-[0.97] disabled:opacity-60"
+                  >
+                    {p.autoCropBusy ? <Loader2 size={13} className="animate-spin" /> : <ScanSearch size={13} />} Auto-detect player
+                  </button>
+                  {p.roi && (
+                    <button
+                      type="button"
+                      onClick={p.onResetCrop}
+                      aria-label="Use the full frame"
+                      title="Use the full frame"
+                      className="grid size-7 place-items-center rounded-lg border border-white/[0.08] bg-obsidian/80 text-zinc-400 transition hover:text-zinc-200"
+                    >
+                      <Maximize size={13} />
+                    </button>
+                  )}
+                </div>
+              )}
               {videoSource && (
                 <button
                   type="button"
@@ -310,7 +357,12 @@ export function Studio({ videoRef, canvasRef, ...p }: Props) {
               <Route size={14} /> Tutorial
             </button>
           </div>
-          <Toolbar threshold={p.threshold} onThresholdChange={p.onThresholdChange} hint={live.hint} />
+          <Toolbar threshold={p.threshold} onThresholdChange={p.onThresholdChange} hint={live.hint} speed={p.speed} onSpeedChange={p.onSpeedChange} />
+          {p.cropMessage && (source === 'video' || source === 'screen') && (
+            <p className="px-1 text-xs text-zinc-400" role="status">
+              {p.cropMessage}
+            </p>
+          )}
         </div>
 
         <div className="grid gap-2 sm:gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -332,6 +384,9 @@ export function Studio({ videoRef, canvasRef, ...p }: Props) {
                 autoPlay
               />
               <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" data-testid="overlay" />
+              {(source === 'video' || source === 'screen') && (p.cropEditing || p.roi) && (
+                <RoiCropper videoRef={videoRef} roi={p.roi ?? { x: 0.1, y: 0.1, w: 0.8, h: 0.8 }} onChange={p.onRoiChange} editing={p.cropEditing} />
+              )}
 
               {/* Hand framing guide zone */}
               <AnimatePresence>

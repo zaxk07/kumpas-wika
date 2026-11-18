@@ -1,5 +1,5 @@
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision'
-import { createLandmarkers, nextTimestamp, type Delegate, type Landmarkers } from './mediapipe'
+import { createLandmarkers, labels, nextTimestamp, type Delegate, type Landmarkers } from './mediapipe'
 
 /**
  * Inference client. Runs MediaPipe in a module Web Worker (preferred) so inference
@@ -11,10 +11,12 @@ export type WorkerIn = { type: 'init' } | { type: 'detect'; id: number; bitmap: 
 export type WorkerOut =
   | { type: 'ready'; delegate: Delegate; benchMs: Partial<Record<Delegate, number>>; hasPose: boolean }
   | { type: 'error'; message: string }
-  | { type: 'result'; id: number; hands: NormalizedLandmark[][]; pose: NormalizedLandmark[] | null; ms: number; error?: string }
+  | { type: 'result'; id: number; hands: NormalizedLandmark[][]; handedness: string[]; pose: NormalizedLandmark[] | null; ms: number; error?: string }
 
 export interface InferenceResult {
   hands: NormalizedLandmark[][]
+  /** MediaPipe's 'Left' / 'Right' label per hand (it assumes a mirrored, selfie-style image). */
+  handedness: string[]
   pose: NormalizedLandmark[] | null
   /** Model time for this frame (ms). */
   ms: number
@@ -88,7 +90,7 @@ export class InferenceClient {
         } else if (m.type === 'error') reject(new Error(m.message))
         else if (m.type === 'result') {
           if (m.error) console.warn('[kumpas] detection frame skipped', m.error)
-          this.pending.get(m.id)?.({ hands: m.hands, pose: m.pose, ms: m.ms })
+          this.pending.get(m.id)?.({ hands: m.hands, handedness: m.handedness, pose: m.pose, ms: m.ms })
           this.pending.delete(m.id)
         }
       }
@@ -110,15 +112,15 @@ export class InferenceClient {
       try {
         const t = nextTimestamp(ts)
         const t0 = performance.now()
-        const hands = this.main.hand.detectForVideo(bitmap, t).landmarks
+        const r = this.main.hand.detectForVideo(bitmap, t)
         const p = pose && this.main.pose ? (this.main.pose.detectForVideo(bitmap, t).landmarks[0] ?? null) : null
-        return Promise.resolve({ hands, pose: p, ms: performance.now() - t0 })
+        return Promise.resolve({ hands: r.landmarks, handedness: labels(r.handedness), pose: p, ms: performance.now() - t0 })
       } finally {
         bitmap.close()
       }
     }
     bitmap.close()
-    return Promise.resolve({ hands: [], pose: null, ms: 0 })
+    return Promise.resolve({ hands: [], handedness: [], pose: null, ms: 0 })
   }
 }
 

@@ -19,10 +19,15 @@ export interface UpperBody {
   rWrist?: Pt
 }
 
+/** Which of the signer's hands (signer's own left/right, not screen side). */
+export type Handed = 'L' | 'R'
+
 /** One processed input frame, from the webcam or from the demo simulator. */
 export interface InputFrame {
   t: number
   hands: HandLandmarks[]
+  /** Signer's left/right for each entry in `hands`, when known. */
+  handed?: Handed[]
   body: UpperBody | null
   /** Source pixel size, used for aspect correction and overlay mapping. */
   width: number
@@ -90,6 +95,10 @@ export type WordSignId =
   | 'ANO'
   | 'TUBIG'
   | 'KAIN'
+  | 'NICE_MEET'
+  | 'PAMILYA'
+  | 'MAGKASAMA'
+  | 'TAPOS'
 
 export type SignId = WordSignId | Letter
 

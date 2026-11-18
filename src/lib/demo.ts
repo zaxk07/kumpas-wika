@@ -147,6 +147,7 @@ export interface HandPlacement {
   palm: number // palm length in image-height units
   rot?: number // extra rotation, degrees
   mirror?: boolean // mirror the hand in image space around the wrist (left hand)
+  yaw?: number // turn the hand about its own long axis, degrees (palm in -> palm out)
 }
 
 /** Build 21 landmarks for a (possibly morphing) pose. */
@@ -163,7 +164,9 @@ export function buildHand(a: DemoShape, place: HandPlacement, t = 0, b?: DemoSha
     CMC[1] + (tip[1] - CMC[1]) * s,
     CMC[2] + (tip[2] - CMC[2]) * s,
   ]
-  const local: Vec3[] = [[0, 0, 0], CMC, tj(0.4, 1), tj(0.72, 0.6), tip, ...fingers.flat()]
+  const flat: Vec3[] = [[0, 0, 0], CMC, tj(0.4, 1), tj(0.72, 0.6), tip, ...fingers.flat()]
+  const yaw = (place.yaw ?? 0) * DEG
+  const local: Vec3[] = yaw ? flat.map(([x, y, z]) => [x * Math.cos(yaw) + z * Math.sin(yaw), y, -x * Math.sin(yaw) + z * Math.cos(yaw)]) : flat
 
   const u = { x: Math.sin(rot), y: -Math.cos(rot) }
   const v = { x: Math.cos(rot), y: Math.sin(rot) }
@@ -186,9 +189,17 @@ interface MotionOut {
   dy?: number
   scale?: number
   rot?: number
+  yaw?: number
   morph?: number
 }
 type Motion = (s: number) => MotionOut
+
+/** The signer's other (left) hand, for two-handed signs. */
+export interface SecondHand {
+  shape: DemoShape
+  base: [number, number]
+  motion?: Motion
+}
 
 export interface Segment {
   sign: SignId | null // null = pause (hand lowered out of view)
@@ -197,6 +208,7 @@ export interface Segment {
   dur: number
   base?: [number, number]
   motion?: Motion
+  pair?: SecondHand
 }
 
 const ease = (u: number) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u))
@@ -213,6 +225,7 @@ interface SignScript {
   base?: [number, number]
   motion?: Motion
   morphTo?: DemoShape
+  pair?: SecondHand
 }
 
 /** How the simulator performs each sign. */
@@ -239,6 +252,23 @@ export const PERFORM: Record<SignId, SignScript> = {
   ANO: { shape: 'OPEN', dur: 1.6, motion: (s) => ({ dx: 0.02 * osc(2.5, s), rot: 80 }) },
   TUBIG: { shape: 'W', dur: 1.2, base: FACE },
   KAIN: { shape: 'O', dur: 1.2, base: FACE },
+  // Two-handed signs: `pair` is the signer's other hand, mirrored.
+  NICE_MEET: {
+    shape: 'INDEX', dur: 1.3, base: [0.53, 0.48], motion: (s) => ({ dx: 0.14 * (1 - ease(s / 0.7)) }),
+    pair: { shape: 'INDEX', base: [0.47, 0.48], motion: (s) => ({ dx: -0.14 * (1 - ease(s / 0.7)) }) },
+  },
+  PAMILYA: {
+    shape: 'F', dur: 1.4, base: [0.53, 0.5], motion: (s) => ({ dx: 0.13 * ease(s / 0.6), dy: 0.04 * Math.sin(Math.PI * ease(s / 0.6)) }),
+    pair: { shape: 'F', base: [0.47, 0.5], motion: (s) => ({ dx: -0.13 * ease(s / 0.6), dy: 0.04 * Math.sin(Math.PI * ease(s / 0.6)) }) },
+  },
+  MAGKASAMA: {
+    shape: 'A', dur: 1.5, base: [0.54, 0.55], motion: (s) => ({ dx: 0.035 * Math.sin(2 * Math.PI * 1.2 * s), dy: 0.03 * Math.cos(2 * Math.PI * 1.2 * s) }),
+    pair: { shape: 'A', base: [0.46, 0.55], motion: (s) => ({ dx: 0.035 * Math.sin(2 * Math.PI * 1.2 * s), dy: 0.03 * Math.cos(2 * Math.PI * 1.2 * s) }) },
+  },
+  TAPOS: {
+    shape: 'OPEN', dur: 1.3, base: [0.6, 0.45], motion: (s) => ({ yaw: 170 * ease((s - 0.15) / 0.4), dx: 0.03 * ease((s - 0.15) / 0.4) }),
+    pair: { shape: 'OPEN', base: [0.4, 0.45], motion: (s) => ({ yaw: 170 * ease((s - 0.15) / 0.4), dx: -0.03 * ease((s - 0.15) / 0.4) }) },
+  },
   A: { shape: 'A', dur: 1.3 }, B: { shape: 'B', dur: 1.3 }, C: { shape: 'C', dur: 1.3 }, D: { shape: 'D', dur: 1.3 },
   E: { shape: 'E', dur: 1.3 }, F: { shape: 'F', dur: 1.3 }, G: { shape: 'G', dur: 1.3 }, H: { shape: 'H', dur: 1.3 },
   I: { shape: 'I', dur: 1.3 },
@@ -265,6 +295,8 @@ export const PERFORM: Record<SignId, SignScript> = {
 const GAP = 0.3
 const PAUSE = 2.8
 const IN_PHRASE_MAX = 1.25
+/** Still signs lock sooner than moving ones, so the signer moves on sooner too. */
+const IN_PHRASE_MAX_STILL = 0.95
 
 function phrase(signs: SignId[]): Segment[] {
   const out: Segment[] = []
@@ -272,8 +304,8 @@ function phrase(signs: SignId[]): Segment[] {
     const p = PERFORM[sign]
     // Inside a phrase, move on soon after the sign locks (all signs lock by ~1.15 s) so the
     // gap to the next sign stays well under the 2 s sentence-break pause.
-    const dur = i < signs.length - 1 ? Math.min(p.dur, IN_PHRASE_MAX) : p.dur
-    out.push({ sign, shape: p.shape, morphTo: p.morphTo, dur, base: p.base, motion: p.motion })
+    const dur = i < signs.length - 1 ? Math.min(p.dur, p.motion ? IN_PHRASE_MAX : IN_PHRASE_MAX_STILL) : p.dur
+    out.push({ sign, shape: p.shape, morphTo: p.morphTo, dur, base: p.base, motion: p.motion, pair: p.pair })
     out.push({ sign: null, dur: i === signs.length - 1 ? PAUSE : GAP })
   })
   return out
@@ -286,6 +318,8 @@ export const SHOWCASE: SignId[][] = [
   ['GUSTO', 'TUBIG'],
   ['AKO', 'Z', 'A', 'K', 'I'],
   ['SALAMAT', 'TULONG'],
+  ['KUMUSTA', 'NICE_MEET'],
+  ['PAMILYA', 'MAGKASAMA'],
   ['MAHAL_KITA'],
 ]
 export const DEMO_SCRIPT: Segment[] = [{ sign: null, dur: 0.8 }, ...SHOWCASE.flatMap(phrase)]
@@ -324,7 +358,7 @@ export function demoFrame(elapsed: number, t: number, script: Segment[] = DEMO_S
   if (!seg.sign || !seg.shape) {
     body.rElbow = { x: 0.7, y: 0.82, z: 0 }
     body.rWrist = { x: 0.67, y: 1.02, z: 0 }
-    return { t, hands: [], body, width: DEMO_W, height: DEMO_H, acting: null }
+    return { t, hands: [], handed: [], body, width: DEMO_W, height: DEMO_H, acting: null }
   }
 
   const m = (seg.motion ?? still)(s)
@@ -335,8 +369,28 @@ export function demoFrame(elapsed: number, t: number, script: Segment[] = DEMO_S
   const totalRot = ((POSES[seg.shape].rot ?? 0) + rot) * DEG
   const wx = bx + (m.dx ?? 0) - (Math.sin(totalRot) * palm * 0.5) / ASPECT
   const wy = by + (m.dy ?? 0) + Math.cos(totalRot) * palm * 0.5
-  const hand = buildHand(seg.shape, { wx, wy, palm, rot }, elapsed, seg.morphTo, m.morph ?? 0)
+  const hand = buildHand(seg.shape, { wx, wy, palm, rot, yaw: m.yaw }, elapsed, seg.morphTo, m.morph ?? 0)
   body.rWrist = { x: hand[0].x, y: hand[0].y, z: 0 }
   body.rElbow = { x: (rShoulder.x + hand[0].x) / 2 + 0.07, y: Math.max(rShoulder.y, hand[0].y) + 0.12, z: 0 }
-  return { t, hands: [hand], body, width: DEMO_W, height: DEMO_H, acting: seg.sign }
+  if (seg.pair) {
+    const pm = (seg.pair.motion ?? still)(s)
+    const prot = ((POSES[seg.pair.shape].rot ?? 0) + (pm.rot ?? 0)) * DEG
+    const ppalm = 0.17 * (pm.scale ?? 1)
+    const left = buildHand(
+      seg.pair.shape,
+      {
+        wx: seg.pair.base[0] + (pm.dx ?? 0) + (Math.sin(prot) * ppalm * 0.5) / ASPECT,
+        wy: seg.pair.base[1] + (pm.dy ?? 0) + Math.cos(prot) * ppalm * 0.5,
+        palm: ppalm,
+        rot: -(pm.rot ?? 0),
+        mirror: true,
+        yaw: pm.yaw,
+      },
+      elapsed + 3.1,
+    )
+    body.lWrist = { x: left[0].x, y: left[0].y, z: 0 }
+    body.lElbow = { x: (lShoulder.x + left[0].x) / 2 - 0.07, y: Math.max(lShoulder.y, left[0].y) + 0.12, z: 0 }
+    return { t, hands: [hand, left], handed: ['R', 'L'], body, width: DEMO_W, height: DEMO_H, acting: seg.sign }
+  }
+  return { t, hands: [hand], handed: ['R'], body, width: DEMO_W, height: DEMO_H, acting: seg.sign }
 }

@@ -15,12 +15,14 @@ import type { SignId } from '../lib/types'
 type Motion =
   | 'wave' | 'salute' | 'fold' | 'forward-down' | 'sweep' | 'nod' | 'snap' | 'circle' | 'lift'
   | 'pull' | 'wag' | 'shake' | 'j' | 'z' | 'chin' | 'at-viewer' | 'at-self'
+  | 'meet' | 'apart' | 'flip'
 
 const MOTION: Partial<Record<SignId, Motion>> = {
   KUMUSTA: 'wave', HELLO_SALUTE: 'salute', PAALAM: 'fold', SALAMAT: 'forward-down', WALANG_ANUMAN: 'sweep',
   OO: 'nod', HINDI: 'sweep', NO_SNAP: 'snap', PAKIUSAP: 'circle', PATAWAD: 'circle', TULONG: 'lift',
   GUSTO: 'pull', KAILANGAN: 'nod', SAAN: 'wag', ANO: 'shake', TUBIG: 'chin', KAIN: 'chin',
   IKAW: 'at-viewer', AKO: 'at-self', J: 'j', Z: 'z',
+  NICE_MEET: 'meet', PAMILYA: 'apart', MAGKASAMA: 'circle', TAPOS: 'flip',
 }
 
 const BONES: [number, number][] = [
@@ -40,7 +42,10 @@ const PAD = 8
 type Tone = 'base' | 'on' | 'accent'
 interface Geometry {
   pts: [number, number][]
+  /** The other hand, for two-handed signs. */
+  pts2?: [number, number][]
   tone: Tone[] // per finger 0..4
+  tone2?: Tone[]
   box: { l: number; t: number; r: number; b: number; cx: number; cy: number }
   motion?: Motion
 }
@@ -65,22 +70,36 @@ function geometry(id: SignId): Geometry {
   if (hit) return hit
   const perf = PERFORM[id]
   const rot = id === 'ANO' ? 80 : 0
-  const lm = buildHand(perf.shape, { wx: 0.5, wy: 0.5, palm: 0.2, rot }, 0)
-  // Mirror to match the on-screen selfie view; aspect-correct x.
-  const raw = lm.map((p) => [(1 - p.x) * (DEMO_W / DEMO_H), p.y] as [number, number])
-  const xs = raw.map((p) => p[0])
-  const ys = raw.map((p) => p[1])
+  const hands = [buildHand(perf.shape, { wx: 0.5, wy: 0.5, palm: 0.2, rot }, 0)]
+  // Two-handed signs: the other hand, mirrored, at its starting offset from the first.
+  if (perf.pair) {
+    const off = perf.base ? perf.base[0] - perf.pair.base[0] : 0.12
+    hands.push(buildHand(perf.pair.shape, { wx: 0.5 - off, wy: 0.5 + (perf.pair.base[1] - (perf.base?.[1] ?? 0.5)), palm: 0.2, mirror: true }, 0))
+  }
+  // Mirror to match the on-screen selfie view; aspect-correct x. Both hands share one frame.
+  const raw = hands.map((lm) => lm.map((p) => [(1 - p.x) * (DEMO_W / DEMO_H), p.y] as [number, number]))
+  const all = raw.flat()
+  const xs = all.map((p) => p[0])
+  const ys = all.map((p) => p[1])
   const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]
   const span = Math.max(maxX - minX, maxY - minY) || 1
   const k = (VIEW - PAD * 2) / span
   const ox = (VIEW - (maxX - minX) * k) / 2
   const oy = (VIEW - (maxY - minY) * k) / 2
-  const pts = raw.map(([x, y]) => [ox + (x - minX) * k, oy + (y - minY) * k] as [number, number])
+  const fit = (pts: [number, number][]) => pts.map(([x, y]) => [ox + (x - minX) * k, oy + (y - minY) * k] as [number, number])
+  const pts = fit(raw[0])
   const l = ox
   const t = oy
   const r = ox + (maxX - minX) * k
   const b = oy + (maxY - minY) * k
-  const g: Geometry = { pts, tone: fingerTone(perf.shape), box: { l, t, r, b, cx: (l + r) / 2, cy: (t + b) / 2 }, motion: MOTION[id] }
+  const g: Geometry = {
+    pts,
+    pts2: raw[1] ? fit(raw[1]) : undefined,
+    tone: fingerTone(perf.shape),
+    tone2: perf.pair ? fingerTone(perf.pair.shape) : undefined,
+    box: { l, t, r, b, cx: (l + r) / 2, cy: (t + b) / 2 },
+    motion: MOTION[id],
+  }
   cache.set(id, g)
   return g
 }
@@ -162,6 +181,33 @@ function MotionOverlay({ g, markerId }: { g: Geometry; markerId: string }) {
         </g>
       )
     }
+    case 'meet': {
+      const y = Math.max(2.5, t - 2.5)
+      return (
+        <g>
+          <path d={`M ${l + 1} ${y} L ${cx - 2} ${y}`} {...common} markerEnd={end} />
+          <path d={`M ${r - 1} ${y} L ${cx + 2} ${y}`} {...common} markerEnd={end} />
+        </g>
+      )
+    }
+    case 'apart': {
+      const y = Math.min(VIEW - 2.5, b + 3)
+      return (
+        <g>
+          <path d={`M ${cx - 2} ${y} Q ${cx - 9} ${y + 1} ${Math.max(2.5, l)} ${y - 4}`} {...common} markerEnd={end} />
+          <path d={`M ${cx + 2} ${y} Q ${cx + 9} ${y + 1} ${Math.min(VIEW - 2.5, r)} ${y - 4}`} {...common} markerEnd={end} />
+        </g>
+      )
+    }
+    case 'flip': {
+      const y = Math.max(3, t - 2)
+      return (
+        <g>
+          <path d={`M ${l + 2} ${y + 2} A 4 3 0 0 1 ${l + 9} ${y + 2}`} {...common} markerEnd={end} />
+          <path d={`M ${r - 2} ${y + 2} A 4 3 0 0 0 ${r - 9} ${y + 2}`} {...common} markerEnd={end} />
+        </g>
+      )
+    }
     case 'at-self': {
       const [x, y] = p[8]
       return (
@@ -188,7 +234,6 @@ interface Props {
 export const SignDiagram = memo(function SignDiagram({ id, size = 44, active = false, className = '', title }: Props) {
   const g = geometry(id)
   const markerId = `arrow-${useId().replace(/:/g, '')}`
-  const tone = (finger: number) => COLORS[g.tone[finger]]
   return (
     <svg
       viewBox={`0 0 ${VIEW} ${VIEW}`}
@@ -204,30 +249,35 @@ export const SignDiagram = memo(function SignDiagram({ id, size = 44, active = f
           <path d="M 0.5 0.5 L 5 3 L 0.5 5.5" fill="none" stroke={COLORS.motion} strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
         </marker>
       </defs>
-      <g opacity={active ? 1 : 0.92}>
-        <polygon points={PALM.map((i) => g.pts[i].join(',')).join(' ')} fill={active ? 'rgb(52 211 153 / 0.1)' : 'rgb(161 161 170 / 0.06)'} />
-        {BONES.map(([a, b2]) => {
-          const finger = FINGER_OF(b2)
-          const palmEdge = a === 0 && b2 !== 1 ? true : a === 5 && b2 === 9 ? true : a === 9 && b2 === 13 ? true : a === 13 && b2 === 17
-          return (
-            <line
-              key={`${a}-${b2}`}
-              x1={g.pts[a][0]}
-              y1={g.pts[a][1]}
-              x2={g.pts[b2][0]}
-              y2={g.pts[b2][1]}
-              stroke={palmEdge ? COLORS.base : tone(finger)}
-              strokeWidth={1.5}
-              strokeLinecap="round"
-            />
-          )
-        })}
-        {g.pts.map(([x, y], i) => {
-          const tip = i === 4 || i === 8 || i === 12 || i === 16 || i === 20
-          const t = g.tone[FINGER_OF(i)]
-          return <circle key={i} cx={x} cy={y} r={tip ? 1.25 : 0.8} fill={tip && t !== 'base' ? COLORS[t] : '#a1a1aa'} />
-        })}
-      </g>
+      {[
+        { pts: g.pts, tones: g.tone },
+        ...(g.pts2 && g.tone2 ? [{ pts: g.pts2, tones: g.tone2 }] : []),
+      ].map(({ pts, tones }, hi) => (
+        <g key={hi} opacity={active ? 1 : 0.92}>
+          <polygon points={PALM.map((i) => pts[i].join(',')).join(' ')} fill={active ? 'rgb(52 211 153 / 0.1)' : 'rgb(161 161 170 / 0.06)'} />
+          {BONES.map(([a, b2]) => {
+            const finger = FINGER_OF(b2)
+            const palmEdge = a === 0 && b2 !== 1 ? true : a === 5 && b2 === 9 ? true : a === 9 && b2 === 13 ? true : a === 13 && b2 === 17
+            return (
+              <line
+                key={`${a}-${b2}`}
+                x1={pts[a][0]}
+                y1={pts[a][1]}
+                x2={pts[b2][0]}
+                y2={pts[b2][1]}
+                stroke={palmEdge ? COLORS.base : COLORS[tones[finger]]}
+                strokeWidth={g.pts2 ? 1.2 : 1.5}
+                strokeLinecap="round"
+              />
+            )
+          })}
+          {pts.map(([x, y], i) => {
+            const tip = i === 4 || i === 8 || i === 12 || i === 16 || i === 20
+            const tn = tones[FINGER_OF(i)]
+            return <circle key={i} cx={x} cy={y} r={tip ? 1.15 : 0.7} fill={tip && tn !== 'base' ? COLORS[tn] : '#a1a1aa'} />
+          })}
+        </g>
+      ))}
       <MotionOverlay g={g} markerId={markerId} />
     </svg>
   )

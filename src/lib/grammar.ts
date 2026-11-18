@@ -90,6 +90,10 @@ const INTERJECTION: Partial<Record<Lemma, Out>> = {
   MAGALING: { fil: 'Magaling', en: 'Great job', punct: '!', rule: 'praise' },
   MALI: { fil: 'Mali', en: "That's wrong", punct: '.', rule: 'correction' },
   PAKIUSAP: { fil: 'Pakiusap', en: 'Please', punct: '.', rule: 'please' },
+  NICE_MEET: { fil: 'Ikinagagalak kitang makilala', en: 'Nice to meet you', punct: '!', rule: 'nice-to-meet' },
+  PAMILYA: { fil: 'Pamilya', en: 'Family', punct: '.', rule: 'family' },
+  MAGKASAMA: { fil: 'Magkasama tayo', en: "We're together", punct: '.', rule: 'together' },
+  TAPOS: { fil: 'Tapos na', en: "It's finished", punct: '.', rule: 'finish' },
 }
 
 interface Subject {

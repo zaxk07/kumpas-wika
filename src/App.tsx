@@ -15,6 +15,8 @@ import { usePersistentState } from './hooks/usePersistentState'
 import { usePractice } from './hooks/usePractice'
 import { useSubtitles } from './hooks/useSubtitles'
 import { useVideoInput, type InputKind } from './hooks/useVideoInput'
+import type { SpeedPreset } from './lib/engine'
+import { detectMotionRegion, isFullFrame, type Roi } from './lib/roi'
 import { activeIn } from './lib/signs'
 import type { SignId, Standard, SubtitleMode } from './lib/types'
 
@@ -39,9 +41,57 @@ export default function App() {
   const [practiceOn, setPracticeOn] = useState(false)
   const [tourStep, setTourStep] = useState<number | null>(null)
   const subs = useSubtitles(mode, autoSpeak)
+  const [speed, setSpeed] = useState<SpeedPreset>('standard')
+  const [roi, setRoi] = useState<Roi | null>(null)
+  const roiRef = useRef<Roi | null>(null)
+  const [cropEditing, setCropEditing] = useState(false)
+  const [autoCropBusy, setAutoCropBusy] = useState(false)
+  const [cropMessage, setCropMessage] = useState<string | null>(null)
+  useEffect(() => {
+    roiRef.current = roi
+  }, [roi])
 
   const source: Source = demo ? 'demo' : input.status === 'live' && input.kind ? SOURCE_OF[input.kind] : 'off'
-  const live = useDetectionLoop({ source, videoRef, canvasRef, inference: models.client, onCommit: subs.push, onTick: subs.tick, threshold, standard })
+  const live = useDetectionLoop({ source, videoRef, canvasRef, inference: models.client, onCommit: subs.push, onTick: subs.tick, threshold, standard, speed, roiRef })
+
+  // Sensible lock speed per input: recorded and shared video is usually natural-speed signing;
+  // the camera and demo default to the steadier preset. The toolbar can override either.
+  // A new input (or a new file) also starts uncropped.
+  const inputKey = `${source}|${input.file?.url ?? ''}`
+  const [prevInputKey, setPrevInputKey] = useState(inputKey)
+  if (prevInputKey !== inputKey) {
+    setPrevInputKey(inputKey)
+    if (source !== 'off') setSpeed(source === 'video' || source === 'screen' ? 'fluent' : 'standard')
+    setRoi(null)
+    setCropEditing(false)
+    setCropMessage(null)
+  }
+
+  const toggleCrop = useCallback(() => {
+    setCropEditing((e) => !e)
+    setRoi((r) => r ?? { x: 0.1, y: 0.1, w: 0.8, h: 0.8 })
+    setCropMessage(null)
+  }, [])
+  const resetCrop = useCallback(() => {
+    setRoi(null)
+    setCropEditing(false)
+    setCropMessage(null)
+  }, [])
+  const autoCrop = useCallback(async () => {
+    const v = videoRef.current
+    if (!v) return
+    setAutoCropBusy(true)
+    setCropMessage('Looking for the playing video…')
+    const found = await detectMotionRegion(v)
+    setAutoCropBusy(false)
+    if (!found || isFullFrame(found)) {
+      setCropMessage(found ? 'The whole frame is moving, so no crop is needed.' : 'Couldn’t find a playing video. Start playback, then try again, or drag the crop yourself.')
+      return
+    }
+    setRoi(found)
+    setCropEditing(true)
+    setCropMessage('Found the player. Adjust the box if needed, then press Done cropping.')
+  }, [videoRef])
   const practice = usePractice(live.output, practiceOn)
 
   const toggleDemo = useCallback(() => {
@@ -169,6 +219,16 @@ export default function App() {
           onPracticePick={practiceSign}
           onStartTour={startTour}
           showGuide={showGuide}
+          speed={speed}
+          onSpeedChange={setSpeed}
+          roi={roi}
+          cropEditing={cropEditing}
+          onToggleCrop={toggleCrop}
+          onRoiChange={setRoi}
+          onAutoCrop={() => void autoCrop()}
+          onResetCrop={resetCrop}
+          autoCropBusy={autoCropBusy}
+          cropMessage={cropMessage}
         />
         <TutorialSection onStartTour={startTour} onStartCircuit={startCircuit} />
         <ArchitectureSpreads />

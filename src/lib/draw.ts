@@ -1,5 +1,5 @@
 import { FINGERTIPS } from './handshape'
-import type { HandLandmarks, Pt, UpperBody } from './types'
+import type { Handed, HandLandmarks, Pt, UpperBody } from './types'
 
 export const HAND_CONNECTIONS: [number, number][] = [
   [0, 1], [1, 2], [2, 3], [3, 4],
@@ -71,27 +71,50 @@ export function drawBody(ctx: CanvasRenderingContext2D, body: UpperBody | null, 
   ctx.restore()
 }
 
+/** Bone colours per hand (signer's left = sky, right = emerald). */
+export const HAND_COLORS: Record<Handed, string> = { L: '#38bdf8', R: '#10b981' }
+
+const palmCentre = (pts: [number, number][]) => {
+  let x = 0
+  let y = 0
+  for (const i of [0, 5, 9, 13, 17]) {
+    x += pts[i][0]
+    y += pts[i][1]
+  }
+  return [x / 5, y / 5] as [number, number]
+}
+
+/**
+ * Draw up to two hand skeletons. Each hand keeps its own colour (left sky, right emerald);
+ * the active / two-handed sign state shows as the glow around it. When both hands are in
+ * the signing space, a dashed line links the palms, brighter the closer they get.
+ */
 export function drawHands(
   ctx: CanvasRenderingContext2D,
   hands: HandLandmarks[],
+  handed: Handed[],
   map: Mapper,
   dpr: number,
   trails: Trails,
   accent: string,
+  glowFor: (h: Handed) => boolean,
 ) {
-  // Fingertip trails
-  hands.forEach((hand, hi) => {
+  const mapped = hands.map((hand) => hand.map(map))
+  const seen = new Set<number>()
+  // Fingertip trails, keyed by hand identity so they survive the hands swapping order.
+  mapped.forEach((pts, hi) => {
+    const side = handed[hi] === 'L' ? 1 : 0
     FINGERTIPS.forEach((tip) => {
-      const key = hi * 100 + tip
+      const key = side * 100 + tip
+      seen.add(key)
       const trail = trails.get(key) ?? []
-      trail.push(map(hand[tip]))
+      trail.push(pts[tip])
       if (trail.length > TRAIL_LEN) trail.shift()
       trails.set(key, trail)
     })
   })
   for (const [key, trail] of trails) {
-    const hi = Math.floor(key / 100)
-    if (hi >= hands.length) {
+    if (!seen.has(key)) {
       trail.shift()
       if (!trail.length) trails.delete(key)
     }
@@ -106,8 +129,33 @@ export function drawHands(
     }
   }
 
-  for (const hand of hands) {
-    const pts = hand.map(map)
+  // Inter-hand proximity line.
+  if (mapped.length === 2) {
+    const [ax, ay] = palmCentre(mapped[0])
+    const [bx, by] = palmCentre(mapped[1])
+    const span = Math.hypot(mapped[0][0][0] - mapped[0][9][0], mapped[0][0][1] - mapped[0][9][1]) || 1
+    const d = Math.hypot(ax - bx, ay - by) / span
+    if (d < 5) {
+      const k = 1 - d / 5
+      ctx.save()
+      ctx.setLineDash([6 * dpr, 6 * dpr])
+      ctx.strokeStyle = `rgba(250, 250, 250, ${0.15 + 0.5 * k})`
+      ctx.lineWidth = (1 + 1.5 * k) * dpr
+      ctx.beginPath()
+      ctx.moveTo(ax, ay)
+      ctx.lineTo(bx, by)
+      ctx.stroke()
+      ctx.setLineDash([])
+      ctx.fillStyle = `rgba(250, 250, 250, ${0.3 + 0.6 * k})`
+      ctx.beginPath()
+      ctx.arc((ax + bx) / 2, (ay + by) / 2, 3 * dpr, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+    }
+  }
+
+  mapped.forEach((pts, hi) => {
+    const h = handed[hi] ?? 'R'
     ctx.save()
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
@@ -118,10 +166,11 @@ export function drawHands(
       ctx.moveTo(pts[a][0], pts[a][1])
       ctx.lineTo(pts[b][0], pts[b][1])
     }
-    ctx.strokeStyle = accent
-    ctx.globalAlpha = 0.22
+    ctx.strokeStyle = glowFor(h) ? accent : HAND_COLORS[h]
+    ctx.globalAlpha = glowFor(h) ? 0.3 : 0.14
     ctx.lineWidth = 10 * dpr
     ctx.stroke()
+    ctx.strokeStyle = HAND_COLORS[h]
     ctx.globalAlpha = 1
     ctx.lineWidth = 3 * dpr
     ctx.stroke()
@@ -136,7 +185,7 @@ export function drawHands(
       ctx.stroke()
     })
     ctx.restore()
-  }
+  })
 }
 
 /** Stylized stand-in for the camera image in Demo Mode. */
